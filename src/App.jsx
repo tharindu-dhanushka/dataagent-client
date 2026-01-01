@@ -600,7 +600,7 @@ function App({ isInTeams = false }) {
       })
 
       // 4. Crear run con streaming
-      const url = `${dataAgentConfig.endpoint}/threads/${thread.id}/runs?api-version=2024-05-01-preview`
+      const url = `${getCurrentAgentEndpoint()}/threads/${thread.id}/runs?api-version=2024-05-01-preview`
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -1186,6 +1186,8 @@ function App({ isInTeams = false }) {
                 backgroundColor: 'transparent',
                 resize: 'none',
                 width: '100%',
+                minHeight: '60px',
+                height: 'auto',
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
