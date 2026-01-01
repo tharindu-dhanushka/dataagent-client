@@ -310,12 +310,12 @@ const useStyles = makeStyles({
   inputWrapper: {
     flex: 1,
     display: 'flex',
-    flexDirection: 'column',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     backgroundColor: 'white',
     border: `1px solid ${tokens.colorNeutralStroke1}`,
     borderRadius: '8px',
     padding: '12px 16px',
-    minHeight: '100px',
   },
   sampleQuestions: {
     display: 'flex',
@@ -338,22 +338,22 @@ function App({ isInTeams = false }) {
   // Multi-agent state
   const [availableAgents, setAvailableAgents] = useState([])
   const [selectedAgentId, setSelectedAgentId] = useState(null)
-  const [conversations, setConversations] = useState({}) // { agentId: { messages: [], agentInfo: null } }
+  const [conversations, setConversations] = useState({}) // { agentId: { messages: [], agentInfo: null, loading: false } }
 
   // Current conversation (derived from selected agent)
-  const currentConversation = conversations[selectedAgentId] || { messages: [], agentInfo: null }
+  const currentConversation = conversations[selectedAgentId] || { messages: [], agentInfo: null, loading: false }
   const messages = currentConversation.messages
   const agentInfo = currentConversation.agentInfo
+  const loading = currentConversation.loading || false
 
   const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
   const [currentSteps, setCurrentSteps] = useState([])
   const [expandedSteps, setExpandedSteps] = useState({}) // { msgIndex: boolean }
   const [expandedStepItems, setExpandedStepItems] = useState({}) // { "msgIndex-stepIndex": boolean }
   const [responseTime, setResponseTime] = useState(null)
   const [streamingIndex, setStreamingIndex] = useState(null) // índice del mensaje que está streaming
   const chatEndRef = useRef(null)
-  const isSubmittingRef = useRef(false) // Prevenir doble envío
+  const isSubmittingRef = useRef({}) // Prevenir doble envío por agente { agentId: boolean }
 
   // Helper to update messages for current agent
   const setMessages = (updater) => {
@@ -373,6 +373,18 @@ function App({ isInTeams = false }) {
       [selectedAgentId]: {
         ...prev[selectedAgentId],
         agentInfo: info,
+        messages: prev[selectedAgentId]?.messages || []
+      }
+    }))
+  }
+
+  // Helper to set loading state for current agent
+  const setLoading = (isLoading) => {
+    setConversations(prev => ({
+      ...prev,
+      [selectedAgentId]: {
+        ...prev[selectedAgentId],
+        loading: isLoading,
         messages: prev[selectedAgentId]?.messages || []
       }
     }))
@@ -565,18 +577,47 @@ function App({ isInTeams = false }) {
   }
 
   const sendMessage = async () => {
-    // Prevenir doble envío con ref (más rápido que estado)
-    if (!input.trim() || loading || isSubmittingRef.current) return
-    isSubmittingRef.current = true
+    // Prevenir doble envío con ref (más rápido que estado) - por agente
+    if (!input.trim() || loading || isSubmittingRef.current[selectedAgentId] || !selectedAgentId) return
+    isSubmittingRef.current[selectedAgentId] = true
 
-    // Capturar el endpoint al inicio para usarlo en toda la sesión
+    // Capturar el agentId y endpoint al inicio para usarlo en toda la sesión
     // Esto evita problemas si el usuario cambia de tab durante la ejecución
+    const capturedAgentId = selectedAgentId
     const agentEndpoint = getCurrentAgentEndpoint()
+
+    // Helpers que usan el agentId capturado (no el actual)
+    const getConversation = (prev) => prev[capturedAgentId] || { messages: [], agentInfo: null, loading: false }
+
+    const updateAgentMessages = (updater) => {
+      setConversations(prev => {
+        const conv = getConversation(prev)
+        return {
+          ...prev,
+          [capturedAgentId]: {
+            ...conv,
+            messages: typeof updater === 'function' ? updater(conv.messages) : updater
+          }
+        }
+      })
+    }
+    const updateAgentLoading = (isLoading) => {
+      setConversations(prev => {
+        const conv = getConversation(prev)
+        return {
+          ...prev,
+          [capturedAgentId]: {
+            ...conv,
+            loading: isLoading
+          }
+        }
+      })
+    }
 
     const userMessage = input.trim()
     setInput('')
-    setLoading(true)
-    setMessages((prev) => [...prev, { role: 'user', content: userMessage }])
+    updateAgentLoading(true)
+    updateAgentMessages((prev) => [...prev, { role: 'user', content: userMessage }])
     setCurrentSteps([])
     setResponseTime(null)
     const startTime = Date.now()
@@ -584,7 +625,7 @@ function App({ isInTeams = false }) {
     // Agregar mensaje vacío del assistant que iremos llenando
     const botMsgIndex = messages.length + 1
     setStreamingIndex(botMsgIndex)
-    setMessages((prev) => [...prev, { role: 'assistant', content: '', steps: [], responseTime: null, isStreaming: true }])
+    updateAgentMessages((prev) => [...prev, { role: 'assistant', content: '', steps: [], responseTime: null, isStreaming: true }])
 
     try {
       const token = await getToken()
@@ -648,7 +689,7 @@ function App({ isInTeams = false }) {
                 fullContent += delta
                 const elapsed = Math.round((Date.now() - startTime) / 1000)
                 setResponseTime(elapsed)
-                setMessages((prev) => {
+                updateAgentMessages((prev) => {
                   const updated = [...prev]
                   updated[botMsgIndex] = { role: 'assistant', content: fullContent, steps: [...steps], responseTime: elapsed }
                   return updated
@@ -750,7 +791,7 @@ function App({ isInTeams = false }) {
                         }
                         steps[existingStepIndex].status = event.status
                         setCurrentSteps([...steps])
-                        setMessages((prev) => {
+                        updateAgentMessages((prev) => {
                           const updated = [...prev]
                           if (updated[botMsgIndex]) {
                             updated[botMsgIndex] = { ...updated[botMsgIndex], steps: [...steps] }
@@ -781,7 +822,7 @@ function App({ isInTeams = false }) {
 
                       steps.push(stepInfo)
                       setCurrentSteps([...steps])
-                      setMessages((prev) => {
+                      updateAgentMessages((prev) => {
                         const updated = [...prev]
                         if (updated[botMsgIndex]) {
                           updated[botMsgIndex] = { ...updated[botMsgIndex], steps: [...steps] }
@@ -829,7 +870,7 @@ function App({ isInTeams = false }) {
       }
 
       // Marcar que terminó el streaming
-      setMessages((prev) => {
+      updateAgentMessages((prev) => {
         const updated = [...prev]
         updated[botMsgIndex] = { role: 'assistant', content: fullContent, steps: [...steps], responseTime: finalTime, isStreaming: false }
         return updated
@@ -845,14 +886,14 @@ function App({ isInTeams = false }) {
       console.error('Error:', error)
       const elapsed = Math.round((Date.now() - startTime) / 1000)
       setStreamingIndex(null)
-      setMessages((prev) => {
+      updateAgentMessages((prev) => {
         const updated = [...prev]
         updated[botMsgIndex] = { role: 'assistant', content: `Error: ${error.message}`, steps: [], responseTime: elapsed, isStreaming: false }
         return updated
       })
     } finally {
-      setLoading(false)
-      isSubmittingRef.current = false
+      updateAgentLoading(false)
+      isSubmittingRef.current[capturedAgentId] = false
     }
   }
 
@@ -873,11 +914,11 @@ function App({ isInTeams = false }) {
       <div className={styles.container}>
         <Card className={styles.loginCard}>
           <Text size={500} weight="semibold">
-            VE Data Agent
+            Data Agent Client
           </Text>
-          <Text>Inicia sesión para consultar tus datos</Text>
+          <Text>Sign in to query your data</Text>
           <Button appearance="primary" onClick={login} style={{ marginTop: 16 }}>
-            Iniciar Sesión
+            Sign In
           </Button>
         </Card>
       </div>
@@ -1174,13 +1215,14 @@ function App({ isInTeams = false }) {
               </Text>
             </div>
           )}
-          <div className={styles.inputWrapper}>
+          <div className={styles.inputWrapper} style={loading ? { backgroundColor: '#f5f5f5', opacity: 0.7 } : {}}>
             <textarea
               placeholder={agentInfo?.instruction || "Ask a question to test the data agent's response"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={loading}
+              rows={1}
               style={{
                 flex: 1,
                 border: 'none',
@@ -1190,19 +1232,19 @@ function App({ isInTeams = false }) {
                 backgroundColor: 'transparent',
                 resize: 'none',
                 width: '100%',
-                minHeight: '60px',
-                height: 'auto',
+                minHeight: '24px',
+                maxHeight: '120px',
+                overflow: 'auto',
+                cursor: loading ? 'not-allowed' : 'text',
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
-              <Button
-                appearance="transparent"
-                icon={<Send24Regular />}
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                style={{ color: loading || !input.trim() ? '#999' : '#666' }}
-              />
-            </div>
+            <Button
+              appearance="transparent"
+              icon={<Send24Regular />}
+              onClick={sendMessage}
+              disabled={loading || !input.trim()}
+              style={{ color: loading || !input.trim() ? '#999' : '#666', marginLeft: '8px' }}
+            />
           </div>
         </div>
       </div>
