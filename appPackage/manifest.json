@@ -1,0 +1,44 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "{{APP_ID}}",
+  "developer": {
+    "name": "VE Hospitality",
+    "websiteUrl": "https://vehospitality.com",
+    "privacyUrl": "https://vehospitality.com/privacy",
+    "termsOfUseUrl": "https://vehospitality.com/terms"
+  },
+  "name": {
+    "short": "VE Data Agent",
+    "full": "Vida & Estilo Data Agent"
+  },
+  "description": {
+    "short": "Consulta tus datos con lenguaje natural",
+    "full": "Consulta el Data Warehouse de Vida & Estilo usando lenguaje natural. Accede a ventas, KPIs, inventario y más."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#0078D4",
+  "staticTabs": [
+    {
+      "entityId": "dataagent",
+      "name": "Data Agent",
+      "contentUrl": "https://{{APP_DOMAIN}}",
+      "websiteUrl": "https://{{APP_DOMAIN}}",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": ["identity"],
+  "validDomains": [
+    "{{APP_DOMAIN}}",
+    "*.fabric.microsoft.com",
+    "login.microsoftonline.com"
+  ],
+  "webApplicationInfo": {
+    "id": "{{AAD_APP_ID}}",
+    "resource": "api://{{APP_DOMAIN}}/{{AAD_APP_ID}}"
+  }
+}
