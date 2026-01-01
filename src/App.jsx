@@ -541,11 +541,11 @@ function App({ isInTeams = false }) {
     return dataAgentConfig.endpoint
   }
 
-  // Helper para llamadas API
-  const apiCall = async (token, path, method = 'GET', body = null) => {
+  // Helper para llamadas API - baseUrl fija el endpoint para toda la sesión
+  const apiCall = async (token, path, method = 'GET', body = null, baseUrl = null) => {
     const separator = path.includes('?') ? '&' : '?'
-    const baseUrl = getCurrentAgentEndpoint()
-    const url = `${baseUrl}${path}${separator}api-version=2024-05-01-preview`
+    const endpoint = baseUrl || getCurrentAgentEndpoint()
+    const url = `${endpoint}${path}${separator}api-version=2024-05-01-preview`
     const options = {
       method,
       headers: {
@@ -569,6 +569,10 @@ function App({ isInTeams = false }) {
     if (!input.trim() || loading || isSubmittingRef.current) return
     isSubmittingRef.current = true
 
+    // Capturar el endpoint al inicio para usarlo en toda la sesión
+    // Esto evita problemas si el usuario cambia de tab durante la ejecución
+    const agentEndpoint = getCurrentAgentEndpoint()
+
     const userMessage = input.trim()
     setInput('')
     setLoading(true)
@@ -586,21 +590,21 @@ function App({ isInTeams = false }) {
       const token = await getToken()
 
       // 1. Crear assistant
-      const assistant = await apiCall(token, '/assistants', 'POST', { model: 'not used' })
+      const assistant = await apiCall(token, '/assistants', 'POST', { model: 'not used' }, agentEndpoint)
       console.log('Assistant:', assistant)
 
       // 2. Crear thread
-      const thread = await apiCall(token, '/threads', 'POST', {})
+      const thread = await apiCall(token, '/threads', 'POST', {}, agentEndpoint)
       console.log('Thread:', thread)
 
       // 3. Crear mensaje
       await apiCall(token, `/threads/${thread.id}/messages`, 'POST', {
         role: 'user',
         content: userMessage,
-      })
+      }, agentEndpoint)
 
       // 4. Crear run con streaming
-      const url = `${getCurrentAgentEndpoint()}/threads/${thread.id}/runs?api-version=2024-05-01-preview`
+      const url = `${agentEndpoint}/threads/${thread.id}/runs?api-version=2024-05-01-preview`
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -819,7 +823,7 @@ function App({ isInTeams = false }) {
 
       // Si no hubo streaming, obtener mensaje normal
       if (!fullContent) {
-        const msgs = await apiCall(token, `/threads/${thread.id}/messages`)
+        const msgs = await apiCall(token, `/threads/${thread.id}/messages`, 'GET', null, agentEndpoint)
         const assistantMsg = msgs.data?.find((m) => m.role === 'assistant')
         fullContent = assistantMsg?.content?.[0]?.text?.value || 'Sin respuesta'
       }
@@ -833,7 +837,7 @@ function App({ isInTeams = false }) {
 
       // Cleanup del thread
       try {
-        await apiCall(token, `/threads/${thread.id}`, 'DELETE')
+        await apiCall(token, `/threads/${thread.id}`, 'DELETE', null, agentEndpoint)
       } catch (e) {
         console.log('Thread cleanup error (ignorado):', e)
       }
@@ -933,7 +937,7 @@ function App({ isInTeams = false }) {
                     {/* Texto "Analyzing..." */}
                     <div style={{ padding: '16px' }}>
                       <div className={styles.analyzingText}>
-                        <strong>Analyzing</strong> {currentSteps[0]?.modelName || 'Orders'} <strong>SemanticModel</strong> database ...
+                        <strong>Analyzing</strong> {currentSteps[0]?.modelName || availableAgents.find(a => a.id === selectedAgentId)?.displayName || 'Data'} <strong>SemanticModel</strong> database ...
                       </div>
 
                       {/* Details header colapsable */}
